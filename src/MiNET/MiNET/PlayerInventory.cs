@@ -192,7 +192,7 @@ namespace MiNET
 			return false;
 		}
 
-		public void SetHeldItemSlot(int selectedHotbarSlot, bool sendToPlayer = true)
+		public virtual void SetHeldItemSlot(int selectedHotbarSlot, bool sendToPlayer = true)
 		{
 			InHandSlot = selectedHotbarSlot;
 
