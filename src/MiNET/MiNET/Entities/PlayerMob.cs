@@ -26,6 +26,7 @@
 using System;
 using System.Numerics;
 using System.Text;
+using MiNET.Blocks;
 using MiNET.Items;
 using MiNET.Net;
 using MiNET.Utils;
@@ -45,6 +46,9 @@ namespace MiNET.Entities
 		public short Helmet { get; set; }
 
 		public Item ItemInHand { get; set; }
+
+		public bool IsSleeping { get; set; }
+		public BlockCoordinates BedPosition { get; set; }
 
 		public PlayerMob(string name, Level level) : base(63, level)
 		{
@@ -94,6 +98,21 @@ namespace MiNET.Entities
 		{
 			var metadata = base.GetMetadata();
 			//metadata[0] = new MetadataLong(0);
+
+			//metadata[27] = new MetadataByte((byte)(IsSleeping ? 0x1 : 0x0)); //1 == Sleeping
+			//metadata[27] = new MetadataByte(0x1); //1 == Sleeping
+
+			byte playerFlagIds = 0;
+			if (IsSleeping)
+			{
+				playerFlagIds ^= 1 << 1; //Force Sleeping
+			}
+
+			Console.WriteLine("Sleeping Metadata == " + playerFlagIds);
+
+			metadata[27] = new MetadataByte(playerFlagIds); //1 == Sleeping
+
+			metadata[29] = new MetadataIntCoordinates(BedPosition.X, BedPosition.Y, BedPosition.Z);
 
 			return metadata;
 		}
@@ -238,5 +257,43 @@ namespace MiNET.Entities
 			armorEquipment.boots = ItemFactory.GetItem(Boots);
 			Level.RelayBroadcast(armorEquipment);
 		}
+
+		public virtual void SleepOn(BlockCoordinates blockCoordinates)
+		{
+			Block block = Level.GetBlock(blockCoordinates);
+
+			if (block is Bed bed)
+			{
+				bed.SetOccupied(Level, true);
+			}
+
+			//Teleport(new PlayerLocation(blockCoordinates.X + 0.5, blockCoordinates.Y - 0.5, blockCoordinates.Z + 0.5));
+
+			BedPosition = blockCoordinates;
+			IsSleeping = true;
+
+			BroadcastSetEntityData(); //TODO: Required? Does the level up from this handle this?
+		}
+
+		public virtual void StopSleep()
+		{
+			if (BedPosition.X == 0 && BedPosition.Y == 0 && BedPosition.Z == 0)
+			{
+				return;
+			}
+
+			Block block = Level.GetBlock(BedPosition);
+
+			if (block is Bed bed)
+			{
+				bed.SetOccupied(Level, false);
+			}
+
+			BedPosition = new BlockCoordinates(0, 0, 0);
+			IsSleeping = false;
+
+			BroadcastSetEntityData();
+		}
+
 	}
 }

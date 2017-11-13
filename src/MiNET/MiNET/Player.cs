@@ -54,6 +54,12 @@ namespace MiNET
 	{
 		private static readonly ILog Log = LogManager.GetLogger(typeof (Player));
 
+		const int DATA_PLAYER_FLAG_SLEEP = 1;
+		const int DATA_PLAYER_FLAG_DEAD = 2; //TODO: CHECK
+		const int DATA_PLAYER_FLAGS = 27;
+		const int DATA_PLAYER_BED_POSITION = 29;
+
+
 		private MiNetServer Server { get; set; }
 		public IPEndPoint EndPoint { get; private set; }
 		public INetworkHandler NetworkHandler { get; set; }
@@ -99,6 +105,9 @@ namespace MiNET
 		public Session Session { get; set; }
 
 		public DamageCalculator DamageCalculator { get; set; } = new DamageCalculator();
+
+		public bool IsSleeping { get; set; } = false;
+		public BlockCoordinates BedPosition { get; set; }
 
 		public Player(MiNetServer server, IPEndPoint endPoint) : base(-1, null)
 		{
@@ -451,6 +460,7 @@ namespace MiNET
 				case PlayerAction.StartSleeping:
 					break;
 				case PlayerAction.StopSleeping:
+					StopSleep();
 					break;
 				case PlayerAction.Respawn:
 					MiNetServer.FastThreadPool.QueueUserWorkItem(HandleMcpeRespawn);
@@ -1307,6 +1317,8 @@ namespace MiNET
 
 		public virtual void SpawnLevel(Level toLevel, PlayerLocation spawnPoint, bool useLoadingScreen = false, Func<Level> levelFunc = null, Action postSpawnAction = null)
 		{
+			BedPosition = spawnPoint.GetCoordinates3D();
+
 			bool oldNoAi = NoAi;
 			SetNoAi(true);
 
@@ -3035,6 +3047,16 @@ namespace MiNET
 			//metadata[58] = new MetadataFloat(0f);
 			//metadata[59] = new MetadataFloat(0f);
 
+			byte playerFlagIds = 0;
+			if (IsSleeping)
+			{
+				playerFlagIds ^= 1 << DATA_PLAYER_FLAG_SLEEP; //Force Sleeping
+			}
+
+			metadata[27] = new MetadataByte(playerFlagIds); //1 == Sleeping
+
+			metadata[29] = new MetadataIntCoordinates(BedPosition.X, BedPosition.Y, BedPosition.Z);
+
 			return metadata;
 		}
 
@@ -3131,6 +3153,62 @@ namespace MiNET
 		public virtual void SendMessage(string text, MessageType type = MessageType.Chat, Player sender = null)
 		{
 			Level.BroadcastMessage(text, type, sender, new[] {this});
+		}
+
+		public virtual void SleepOn(BlockCoordinates blockCoordinates)
+		{
+			if (!IsConnected)
+			{
+				return;
+			}
+
+			Block block = Level.GetBlock(blockCoordinates);
+
+			if (block is Bed bed)
+			{
+				bed.SetOccupied(Level, true);
+			}
+
+			Teleport(new PlayerLocation(blockCoordinates.X + 0.5, blockCoordinates.Y - 0.5, blockCoordinates.Z + 0.5));
+
+			BedPosition = new BlockCoordinates(blockCoordinates);
+
+			BroadcastSetEntityData();
+
+			IsSleeping = true;
+
+			McpeSetSpawnPosition mcpeSetSpawnPosition = McpeSetSpawnPosition.CreateObject();
+			mcpeSetSpawnPosition.spawnType = 0; //Player Spawn 
+			mcpeSetSpawnPosition.coordinates = blockCoordinates;
+			mcpeSetSpawnPosition.forced = true;
+			SendPackage(mcpeSetSpawnPosition);
+
+			BroadcastSetEntityData(); //TODO: Required? Does the level up from this handle this?
+		}
+
+		public virtual void StopSleep()
+		{
+			if(BedPosition.X == 0 && BedPosition.Y == 0 && BedPosition.Z == 0)
+			{
+				return;
+			}
+
+			Block block = Level.GetBlock(BedPosition);
+
+			if (block is Bed bed)
+			{
+				bed.SetOccupied(Level, false);
+			}
+
+			BedPosition = BlockCoordinates.Zero;
+			IsSleeping = false;
+
+			BroadcastSetEntityData();
+
+			McpeAnimate animatePacket = McpeAnimate.CreateObject();
+			animatePacket.runtimeEntityId = EntityId;
+			animatePacket.actionId = 3; //Stop Sleep
+			SendPackage(animatePacket);
 		}
 
 		public override void BroadcastEntityEvent()
