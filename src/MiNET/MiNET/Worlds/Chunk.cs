@@ -50,6 +50,7 @@ namespace MiNET.Worlds
 		public Chunk()
 		{
 			ChunkColumn.Fill<byte>(skylight.Data, 0xff);
+			ChunkColumn.Fill<byte>(blocklight.Data, 0xff);
 			//ChunkColumn.Fill<byte>(blocklight.Data, 0x88);
 		}
 
